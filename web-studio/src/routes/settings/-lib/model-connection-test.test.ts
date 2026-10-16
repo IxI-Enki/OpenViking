@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { testModelConnection } from './model-connection-test'
+import { supportsModelTest, testModelConnection } from './model-connection-test'
 
 const state = vi.hoisted(() => ({ test: vi.fn() }))
 vi.mock('./config-file-api', () => ({
@@ -37,6 +37,17 @@ it('exposes only the structured failure code', async () => {
   })
   await expect(testModelConnection(draft)).rejects.toMatchObject({
     code: 'authentication_error',
-    detail: '',
   })
 })
+
+it.each([
+  'jina',
+  'gemini',
+  'voyage',
+  'dashscope',
+  'minimax',
+  'cohere',
+  'litellm',
+])('enables connection testing for the %s embedding adapter', (provider) =>
+  expect(supportsModelTest('embedding', provider)).toBe(true),
+)

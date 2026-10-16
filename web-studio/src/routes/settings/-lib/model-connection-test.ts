@@ -3,10 +3,7 @@ import type { ModelConfig, ModelKind } from './config-file-api'
 import type { ConnectionDraft } from '#/hooks/use-app-connection'
 
 export class ModelTestError extends Error {
-  constructor(
-    public readonly code: string,
-    public readonly detail = '',
-  ) {
+  constructor(public readonly code: string) {
     super(code)
   }
 }
@@ -14,7 +11,18 @@ export function supportsModelTest(kind: ModelKind, provider: unknown) {
   return (
     kind === 'vlm'
       ? ['openai', 'volcengine', 'azure', 'glm', 'kimi', 'litellm']
-      : ['openai', 'azure', 'volcengine']
+      : [
+          'openai',
+          'azure',
+          'volcengine',
+          'jina',
+          'gemini',
+          'voyage',
+          'dashscope',
+          'minimax',
+          'cohere',
+          'litellm',
+        ]
   ).includes(String(provider || '').toLowerCase())
 }
 

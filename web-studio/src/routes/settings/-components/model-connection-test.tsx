@@ -29,7 +29,6 @@ export function ModelConnectionTest({
   const { connection, serverMode } = useAppConnection()
   const [result, setResult] = React.useState<{
     code: string
-    detail?: string
     ms?: number
   } | null>(null)
   const [testing, setTesting] = React.useState(false)
@@ -87,7 +86,7 @@ export function ModelConnectionTest({
       else if (!controller.signal.aborted)
         setResult(
           error instanceof ModelTestError
-            ? { code: error.code, detail: error.detail }
+            ? { code: error.code }
             : { code: 'failed' },
         )
     } finally {
@@ -125,7 +124,6 @@ export function ModelConnectionTest({
           className={`break-all text-sm ${result.code === 'success' ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}
         >
           {t(`models.connectionTest.${result.code}`, { ms: result.ms })}
-          {result.detail ? ` ${result.detail}` : ''}
         </p>
       )}
     </div>

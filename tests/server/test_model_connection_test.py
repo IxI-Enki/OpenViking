@@ -1,5 +1,6 @@
 # Copyright (c) 2026 Beijing Volcano Engine Technology Co., Ltd.
 # SPDX-License-Identifier: AGPL-3.0
+import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -62,6 +63,53 @@ async def test_probe_timeout_closes_model(vlm):
     vlm.close.assert_called_once()
 
 
+async def test_probe_deadline_cancels_request_and_closes(vlm, monkeypatch):
+    wait_for = asyncio.wait_for
+    monkeypatch.delattr(asyncio, "timeout", raising=False)
+
+    async def short_deadline(request, timeout):
+        assert timeout == 25
+        return await wait_for(request, timeout=0.001)
+
+    async def pending(**kwargs):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(asyncio, "wait_for", short_deadline)
+    vlm.get_completion_async.side_effect = pending
+    assert await probe_model(
+        "vlm", {"provider": "openai", "api_key": "draft"}, {"model": "o3"}
+    ) == {"ok": False, "code": "timeout"}
+    vlm.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "provider", ["jina", "gemini", "voyage", "dashscope", "minimax", "cohere", "litellm"]
+)
+async def test_embedding_api_key_providers_use_existing_adapter(provider, monkeypatch):
+    instance = Mock(
+        embed_async=AsyncMock(return_value=Mock(dense_vector=[0.1], sparse_vector=None))
+    )
+
+    def build(settings):
+        assert settings.dense.credentials[0].provider == provider
+        assert settings.dense.credentials[0].api_key == "draft"
+        assert settings.max_retries == 0
+        return instance
+
+    monkeypatch.setattr(
+        "openviking_cli.utils.config.embedding_config.EmbeddingConfig.get_embedder", build
+    )
+    assert (
+        await probe_model(
+            "embedding",
+            {"provider": provider, "api_key": "draft"},
+            {"model": "test-model", "dimension": 1},
+        )
+    )["ok"]
+    instance.embed_async.assert_awaited_once_with("connection test")
+    instance.close.assert_called_once()
+
+
 async def test_keyless_embedding_uses_single_server_adapter(monkeypatch):
     instance = Mock(
         embed_async=AsyncMock(return_value=Mock(dense_vector=[0.1], sparse_vector=None))
@@ -100,8 +148,6 @@ async def test_empty_completion_is_not_reported_as_connected(vlm):
 
 
 async def test_cancelled_probe_releases_instance(vlm):
-    import asyncio
-
     vlm.get_completion_async.side_effect = asyncio.CancelledError()
     with pytest.raises(asyncio.CancelledError):
         await probe_model("vlm", {"provider": "openai", "api_key": "draft"}, {"model": "o3"})
