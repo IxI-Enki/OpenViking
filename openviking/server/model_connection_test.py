@@ -25,6 +25,29 @@ EMBEDDING_PROVIDERS = {
 }
 
 
+async def _embed_probe(settings):
+    # Some adapters discover dimensions with synchronous network I/O in __init__.
+    creation = asyncio.create_task(asyncio.to_thread(settings.get_embedder))
+    instance = None
+    try:
+        try:
+            instance = await asyncio.shield(creation)
+        except asyncio.CancelledError:
+            # A thread cannot be cancelled; close its client if it finishes late.
+            def close_late(task):
+                with contextlib.suppress(Exception):
+                    task.result().close()
+
+            creation.add_done_callback(close_late)
+            raise
+        result = await instance.embed_async("connection test")
+        return bool(result.dense_vector or result.sparse_vector)
+    finally:
+        if instance is not None:
+            with contextlib.suppress(Exception):
+                instance.close()
+
+
 async def probe_model(kind, config, fallback, thinking=None, mode="dense"):
     """Never publish the draft, use failover, or expose provider error payloads."""
     started = time.monotonic()
@@ -63,9 +86,7 @@ async def probe_model(kind, config, fallback, thinking=None, mode="dense"):
                     "max_retries": 0,
                 }
             )
-            instance = settings.get_embedder()
-            result = await asyncio.wait_for(instance.embed_async("connection test"), timeout=25)
-            valid = bool(result.dense_vector or result.sparse_vector)
+            valid = await asyncio.wait_for(_embed_probe(settings), timeout=25)
         if not valid:
             return {"ok": False, "code": "invalidResponse"}
         return {"ok": True, "ms": round((time.monotonic() - started) * 1000)}

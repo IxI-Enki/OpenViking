@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Beijing Volcano Engine Technology Co., Ltd.
 # SPDX-License-Identifier: AGPL-3.0
 import asyncio
+import threading
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -152,3 +153,75 @@ async def test_cancelled_probe_releases_instance(vlm):
     with pytest.raises(asyncio.CancelledError):
         await probe_model("vlm", {"provider": "openai", "api_key": "draft"}, {"model": "o3"})
     vlm.close.assert_called_once()
+
+
+async def test_minimax_dimension_discovery_does_not_block_event_loop(monkeypatch):
+    from openviking.models.embedder.base import EmbedResult
+    from openviking.models.embedder.minimax_embedders import MinimaxDenseEmbedder
+
+    loop = asyncio.get_running_loop()
+    started = asyncio.Event()
+    release = threading.Event()
+    requests = []
+
+    def post(*args, **kwargs):
+        requests.append(threading.get_ident())
+        loop.call_soon_threadsafe(started.set)
+        assert release.wait(2), "event loop blocked during dimension discovery"
+        return Mock(json=lambda: {"base_resp": {"status_code": 0}, "vectors": [[0.1]]})
+
+    monkeypatch.setattr("requests.Session.post", post)
+    embedding = AsyncMock(return_value=EmbedResult(dense_vector=[0.1]))
+    monkeypatch.setattr(MinimaxDenseEmbedder, "embed_async", embedding)
+    task = asyncio.create_task(
+        probe_model("embedding", {"provider": "minimax", "api_key": "draft"}, {"model": "embo-01"})
+    )
+    try:
+        await asyncio.wait_for(started.wait(), 1)
+        assert len(requests) == 1
+        assert requests[0] != threading.get_ident()
+        assert not task.done()
+    finally:
+        release.set()
+    assert (await task)["ok"]
+    embedding.assert_awaited_once_with("connection test", is_query=False)
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_unfinished_embedding_initialization_closes_late_client(monkeypatch, cancel):
+    loop = asyncio.get_running_loop()
+    started = asyncio.Event()
+    closed = asyncio.Event()
+    release = threading.Event()
+    instance = Mock(embed_async=AsyncMock(), close=Mock(side_effect=closed.set))
+    wait_for = asyncio.wait_for
+
+    def build(settings):
+        loop.call_soon_threadsafe(started.set)
+        assert release.wait(2)
+        return instance
+
+    async def short_deadline(request, timeout):
+        return await wait_for(request, timeout=0.02 if timeout == 25 else timeout)
+
+    monkeypatch.setattr(
+        "openviking_cli.utils.config.embedding_config.EmbeddingConfig.get_embedder", build
+    )
+    monkeypatch.setattr(asyncio, "wait_for", short_deadline)
+    task = asyncio.create_task(
+        probe_model("embedding", {"provider": "minimax", "api_key": "draft"}, {"model": "embo-01"})
+    )
+    try:
+        await wait_for(started.wait(), 1)
+        if cancel:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        else:
+            assert await wait_for(task, 1) == {"ok": False, "code": "timeout"}
+        instance.close.assert_not_called()
+    finally:
+        release.set()
+    await wait_for(closed.wait(), 1)
+    instance.close.assert_called_once()
+    instance.embed_async.assert_not_awaited()
