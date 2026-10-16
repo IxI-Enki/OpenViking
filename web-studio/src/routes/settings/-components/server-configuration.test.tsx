@@ -25,6 +25,7 @@ const state = vi.hoisted(() => ({
   save: vi.fn(),
   preview: vi.fn(),
   restart: vi.fn(),
+  testModel: vi.fn(),
   copy: vi.fn(),
 }))
 vi.mock('#/components/code-editor', () => ({
@@ -58,6 +59,7 @@ vi.mock('../-lib/config-file-api', async (importOriginal) => ({
     save: state.save,
     preview: state.preview,
     restart: state.restart,
+    testModel: state.testModel,
   }),
 }))
 vi.mock('#/hooks/use-app-connection', () => ({
@@ -1256,104 +1258,58 @@ it('reorders only the selected embedding group and blocks drag while validation 
   })
 })
 
-it('tests an unsaved model draft without previewing or saving and clears stale results on edit', async () => {
+it('tests an unsaved draft on the server without previewing or saving and clears stale results', async () => {
   mount()
-  await screen.findByText('model-a')
-  const fetch = vi
-    .spyOn(globalThis, 'fetch')
-    .mockResolvedValue(
-      new Response(
-        JSON.stringify({ choices: [{ message: { content: 'OK' } }] }),
-      ),
-    )
-  try {
-    fireEvent.click(
-      section('vlmType').getAllByRole('button', { name: 'models.edit' })[0],
-    )
-    fireEvent.change(screen.getByLabelText('models.fields.model'), {
-      target: { value: 'unsaved-model' },
-    })
-    fireEvent.click(
-      screen.getByRole('button', { name: 'models.connectionTest.action' }),
-    )
-    await screen.findByText('models.connectionTest.success')
-    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body)).model).toBe(
-      'unsaved-model',
-    )
-    expect(state.preview).not.toHaveBeenCalled()
-    expect(state.save).not.toHaveBeenCalled()
-    fireEvent.change(screen.getByLabelText('models.fields.api_base'), {
-      target: { value: 'https://changed.example/v1' },
-    })
-    expect(screen.queryByText('models.connectionTest.success')).toBeNull()
-  } finally {
-    fetch.mockRestore()
-  }
-})
-
-it('cancels a pending connection test when the dialog closes', async () => {
-  mount()
-  await screen.findByText('model-a')
-  let signal: AbortSignal | undefined
-  const fetch = vi
-    .spyOn(globalThis, 'fetch')
-    .mockImplementation((_url, init) => {
-      signal = init?.signal as AbortSignal
-      return new Promise((_resolve, reject) =>
-        signal?.addEventListener('abort', () =>
-          reject(new DOMException('Aborted', 'AbortError')),
-        ),
-      )
-    })
-  try {
-    fireEvent.click(
-      section('vlmType').getAllByRole('button', { name: 'models.edit' })[0],
-    )
-    fireEvent.click(
-      screen.getByRole('button', { name: 'models.connectionTest.action' }),
-    )
-    await screen.findByRole('button', { name: 'models.connectionTest.testing' })
-    fireEvent.click(screen.getByRole('button', { name: 'models.dismiss' }))
-    expect(signal?.aborted).toBe(true)
-    expect(state.save).not.toHaveBeenCalled()
-  } finally {
-    fetch.mockRestore()
-  }
-})
-
-it('times out browser testing after 30 seconds and allows retry', async () => {
-  mount()
+  state.testModel.mockResolvedValue({ ok: true, ms: 12 })
   await screen.findByText('model-a')
   fireEvent.click(
     section('vlmType').getAllByRole('button', { name: 'models.edit' })[0],
   )
-  const fetch = vi
-    .spyOn(globalThis, 'fetch')
-    .mockImplementation(
-      (_url, init) =>
-        new Promise((_resolve, reject) =>
-          init?.signal?.addEventListener('abort', () =>
-            reject(init.signal?.reason),
-          ),
-        ),
+  fireEvent.change(screen.getByLabelText('models.fields.model'), {
+    target: { value: 'unsaved-model' },
+  })
+  fireEvent.click(
+    screen.getByRole('button', { name: 'models.connectionTest.action' }),
+  )
+  await screen.findByText('models.connectionTest.success')
+  expect(state.testModel.mock.calls[0][0].config.model).toBe('unsaved-model')
+  expect(state.preview).not.toHaveBeenCalled()
+  expect(state.save).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('models.fields.api_base'), {
+    target: { value: 'https://changed.example/v1' },
+  })
+  expect(screen.queryByText('models.connectionTest.success')).toBeNull()
+})
+it('cancels a pending server probe when the dialog closes', async () => {
+  mount()
+  let signal: AbortSignal | undefined
+  state.testModel.mockImplementation((_draft, incoming: AbortSignal) => {
+    signal = incoming
+    return new Promise((_resolve, reject) =>
+      incoming.addEventListener('abort', () => reject(incoming.reason)),
     )
-  vi.useFakeTimers()
-  try {
-    fireEvent.click(
-      screen.getByRole('button', { name: 'models.connectionTest.action' }),
-    )
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000)
-    })
-    expect(screen.getByText('models.connectionTest.timeout')).toBeTruthy()
-    expect(
-      screen
-        .getByRole('button', { name: 'models.connectionTest.action' })
-        .hasAttribute('disabled'),
-    ).toBe(false)
-    expect(state.save).not.toHaveBeenCalled()
-  } finally {
-    vi.useRealTimers()
-    fetch.mockRestore()
-  }
+  })
+  await screen.findByText('model-a')
+  fireEvent.click(
+    section('vlmType').getAllByRole('button', { name: 'models.edit' })[0],
+  )
+  fireEvent.click(
+    screen.getByRole('button', { name: 'models.connectionTest.action' }),
+  )
+  await screen.findByRole('button', { name: 'models.connectionTest.testing' })
+  fireEvent.click(screen.getByRole('button', { name: 'models.dismiss' }))
+  expect(signal?.aborted).toBe(true)
+})
+it('shows safe model authentication failures from the server', async () => {
+  mount()
+  state.testModel.mockResolvedValue({ ok: false, code: 'authentication_error' })
+  await screen.findByText('model-a')
+  fireEvent.click(
+    section('vlmType').getAllByRole('button', { name: 'models.edit' })[0],
+  )
+  fireEvent.click(
+    screen.getByRole('button', { name: 'models.connectionTest.action' }),
+  )
+  await screen.findByText('models.connectionTest.authentication_error')
+  expect(state.save).not.toHaveBeenCalled()
 })

@@ -1131,6 +1131,7 @@ export function ServerConfigurationEditor() {
                 )}
                 {!editor.settings && (
                   <ModelConnectionTest
+                    mode={editor.mode}
                     kind={editor.kind}
                     config={editor.value}
                     fallback={

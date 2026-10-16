@@ -876,20 +876,22 @@ const workspace = {
       connectionTest: {
         action: '测试连接',
         testing: '测试中…',
-        hint: '从当前浏览器直接发送一次简短模型请求，可能产生少量用量；不会保存配置。结果仅代表浏览器连接，不代表 OpenViking 服务端连接。',
-        unsupported:
-          '此服务提供商暂不支持浏览器直连测试。支持 OpenAI 兼容 VLM、Azure，以及 OpenAI / Azure Embedding。',
+        hint: '由 OpenViking 服务端发送一次简短模型请求，可能产生少量用量；不会保存配置或切换当前运行模型。',
+        unsupported: '暂不支持此服务提供商的连接测试。',
         success: '连接成功，模型已返回有效结果（{{ms}} ms）。',
-        missing: '请填写模型 ID、API Key 和 API 地址，或使用服务商默认地址。',
-        invalidUrl:
-          'API 地址必须是有效的 HTTP(S) 地址，不能包含账号、查询参数或片段。',
-        network:
-          '浏览器无法完成请求，可能是跨域（CORS）、网络、证书或 HTTPS 页面访问 HTTP 地址受限；无法据此判断模型配置是否有效。',
-        http: '模型服务返回错误：',
-        invalidResponse:
-          '服务已响应，但未返回有效的模型结果，无法确认连接成功。',
-        timeout: '测试超过 30 秒，请重试或检查网络及模型响应速度。',
-        failed: '未能完成测试，请检查配置后重试。',
+        network: 'OpenViking 服务端无法连接模型服务，请检查地址、网络或证书。',
+        timeout: '测试超过 25 秒，请检查网络及模型响应速度。',
+        invalidResponse: '模型服务没有返回有效结果。',
+        invalid_request: '模型配置或请求参数不正确，请检查后重试。',
+        authentication_error:
+          '模型服务拒绝了 API Key，请检查 Key 是否正确或已失效。',
+        permission_denied: '此 Key 无权调用指定模型。',
+        rate_limit_error: '模型服务触发限流，请稍后重试。',
+        quota_exhausted: '模型服务额度不足，请检查套餐或余额。',
+        model_not_found: '找不到指定模型或接入点，请检查模型 ID。',
+        failed: '未能完成测试，请检查连接配置后重试。',
+        input_too_large: '模型服务拒绝了输入大小。',
+        content_safety: '请求被模型服务的内容策略拒绝。',
       },
       dragToReorder: '拖动调整 {{model}} 的顺序',
       dragHint: '拖动排序，也可使用键盘上下方向键。',

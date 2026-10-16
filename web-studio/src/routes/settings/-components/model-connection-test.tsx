@@ -1,10 +1,11 @@
 import * as React from 'react'
 import { Loader2Icon, PlugZapIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useAppConnection } from '#/hooks/use-app-connection'
 import { Button } from '#/components/ui/button'
 import {
   ModelTestError,
-  supportsBrowserModelTest,
+  supportsModelTest,
   testModelConnection,
 } from '../-lib/model-connection-test'
 import type { ModelConfig, ModelKind } from '../-lib/config-file-api'
@@ -14,15 +15,18 @@ export function ModelConnectionTest({
   config,
   fallback,
   thinking,
+  mode,
   disabled,
 }: {
   kind: ModelKind
   config: ModelConfig
   fallback: ModelConfig
   thinking?: boolean
+  mode?: string
   disabled: boolean
 }) {
   const { t } = useTranslation('settings')
+  const { connection, serverMode } = useAppConnection()
   const [result, setResult] = React.useState<{
     code: string
     detail?: string
@@ -37,8 +41,20 @@ export function ModelConnectionTest({
       active.current?.abort()
       active.current = null
     }
-  }, [kind, config, fallback, thinking])
-  const supported = supportsBrowserModelTest(kind, config.provider)
+  }, [
+    kind,
+    config,
+    fallback,
+    thinking,
+    mode,
+    connection.baseUrl,
+    connection.adminApiKey,
+    connection.apiKey,
+    connection.accountId,
+    connection.userId,
+    serverMode,
+  ])
+  const supported = supportsModelTest(kind, config.provider)
   async function test() {
     if (testing || disabled || !supported) return
     const controller = new AbortController()
@@ -50,6 +66,9 @@ export function ModelConnectionTest({
     }, 30_000)
     try {
       const ms = await testModelConnection({
+        connection,
+        trusted: serverMode === 'trusted',
+        mode,
         kind,
         config,
         fallback,
