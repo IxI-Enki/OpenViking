@@ -910,6 +910,31 @@ const workspace = {
       dense: 'Dense',
       sparse: 'Sparse',
       hybrid: 'Hybrid',
+      connectionTest: {
+        action: 'Test connection',
+        testing: 'Testing…',
+        hint: 'Sends a small model request directly from this browser and may incur usage. Does not save configuration. Tests browser connectivity, not server connectivity.',
+        unsupported:
+          'Browser testing is unavailable for this provider. Supports OpenAI-compatible VLM, Azure, and OpenAI / Azure embeddings.',
+        success: 'Connected: model returned a valid result ({{ms}} ms).',
+        missing:
+          'Enter a model ID, API key and API URL, or use the provider default URL.',
+        invalidUrl:
+          'Enter an HTTP(S) API URL without embedded credentials, query parameters or fragments.',
+        network:
+          'Browser could not complete the request. Possible causes include CORS, network, TLS or mixed-content restrictions. This does not determine whether the model configuration is valid.',
+        http: 'Model service returned an error:',
+        invalidResponse:
+          'Service responded without a valid model result; connectivity could not be confirmed.',
+        timeout:
+          'Test timed out after 30 seconds. Retry or check the network and model response time.',
+        failed:
+          'Could not complete the test. Check the configuration and retry.',
+      },
+      dragToReorder: 'Drag to reorder {{model}}',
+      dragHint: 'Drag to reorder, or use the up and down arrow keys.',
+      thinkingHint:
+        'Shared by all VLM models. Requires model/provider support; takes effect after saving and restarting.',
       priority: 'Order',
       preferred: 'Preferred',
       backup: 'Backup',

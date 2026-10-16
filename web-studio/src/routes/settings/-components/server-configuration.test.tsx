@@ -1110,3 +1110,250 @@ it.each(['volcengine', 'unknown'])(
     client.clear()
   },
 )
+
+it('drags VLM models into priority order and preserves complete credentials on save', async () => {
+  mount()
+  await screen.findByText('model-a')
+  const handles = section('vlmType').getAllByRole('button', {
+    name: 'models.dragToReorder',
+  })
+  const transfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' }
+  fireEvent.dragStart(handles[1], { dataTransfer: transfer })
+  fireEvent.dragOver(handles[0], { dataTransfer: transfer })
+  expect(state.preview).not.toHaveBeenCalled()
+  expect(handles[0].closest('[data-drop-target]')).toBeTruthy()
+  fireEvent.drop(handles[0], { dataTransfer: transfer })
+  await waitFor(() => expect(state.preview).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByRole('button', { name: 'models.saveAll' }))
+  await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1))
+  const saved = JSON.parse(state.save.mock.calls[0][0])
+  expect(saved.vlm.credentials).toEqual([...language.credentials].reverse())
+  expect(saved.embedding).toEqual(file.embedding)
+})
+
+it('cancels a drag without changing the draft and supports keyboard reordering', async () => {
+  mount()
+  await screen.findByText('model-a')
+  const handles = section('vlmType').getAllByRole('button', {
+    name: 'models.dragToReorder',
+  })
+  const transfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' }
+  fireEvent.dragStart(handles[0], { dataTransfer: transfer })
+  fireEvent.dragOver(handles[1], { dataTransfer: transfer })
+  fireEvent.dragEnd(handles[0], { dataTransfer: transfer })
+  fireEvent.drop(handles[1], { dataTransfer: transfer })
+  expect(state.preview).not.toHaveBeenCalled()
+  fireEvent.keyDown(handles[0], { key: 'ArrowUp' })
+  expect(state.preview).not.toHaveBeenCalled()
+  fireEvent.keyDown(handles[1], { key: 'ArrowUp' })
+  await waitFor(() => expect(state.preview).toHaveBeenCalledTimes(1))
+  expect(state.preview.mock.calls[0][1].vlm.credentials).toEqual(
+    [...language.credentials].reverse(),
+  )
+})
+
+it.each(['addModel', 'edit'])(
+  'edits the shared thinking setting from the VLM %s dialog',
+  async (action) => {
+    mount()
+    await screen.findByText('model-a')
+    fireEvent.click(
+      section('vlmType').getAllByRole('button', {
+        name: `models.${action}`,
+      })[0],
+    )
+    expect(screen.getByText('models.thinkingHint')).toBeTruthy()
+    fireEvent.click(
+      screen.getByRole('switch', { name: 'models.fields.thinking' }),
+    )
+    if (action === 'addModel') {
+      fireEvent.change(screen.getByLabelText('models.fields.model'), {
+        target: { value: 'new-model' },
+      })
+      fireEvent.change(screen.getByLabelText('models.fields.api_key'), {
+        target: { value: 'new-key' },
+      })
+    }
+    await apply()
+    fireEvent.click(screen.getByRole('button', { name: 'models.saveAll' }))
+    await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1))
+    const saved = JSON.parse(state.save.mock.calls[0][0])
+    expect(saved.vlm.thinking).toBe(true)
+    expect(saved.vlm.credentials.slice(0, 2)).toEqual(language.credentials)
+    expect(
+      saved.vlm.credentials.every((item: ModelConfig) => !('thinking' in item)),
+    ).toBe(true)
+  },
+)
+
+it('discards thinking changes when the model dialog is cancelled', async () => {
+  mount()
+  await screen.findByText('model-a')
+  fireEvent.click(
+    section('vlmType').getAllByRole('button', { name: 'models.edit' })[0],
+  )
+  fireEvent.click(
+    screen.getByRole('switch', { name: 'models.fields.thinking' }),
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'models.dismiss' }))
+  expect(state.preview).not.toHaveBeenCalled()
+  expect(screen.queryByRole('button', { name: 'models.saveAll' })).toBeNull()
+})
+
+it('reorders only the selected embedding group and blocks drag while validation is pending', async () => {
+  const payload = structuredClone(data)
+  payload.models.embedding.config.dense.credentials.push({
+    id: 'embed-backup',
+    provider: 'openai',
+    api_key: 'backup-key',
+    api_base: 'https://backup.example.com',
+  })
+  mount(payload)
+  await screen.findByText('model-a')
+  let finish!: (value: unknown) => void
+  state.preview.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+  )
+  const embedding = section('embeddingType')
+  const handles = embedding.getAllByRole('button', {
+    name: 'models.dragToReorder',
+  })
+  const transfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' }
+  // A drag from another model list must not be accepted here.
+  fireEvent.dragStart(
+    section('vlmType').getAllByRole('button', {
+      name: 'models.dragToReorder',
+    })[0],
+    { dataTransfer: transfer },
+  )
+  fireEvent.drop(handles[1], { dataTransfer: transfer })
+  expect(state.preview).not.toHaveBeenCalled()
+  fireEvent.dragEnd(
+    section('vlmType').getAllByRole('button', {
+      name: 'models.dragToReorder',
+    })[0],
+  )
+  fireEvent.dragStart(handles[1], { dataTransfer: transfer })
+  fireEvent.drop(handles[0], { dataTransfer: transfer })
+  await waitFor(() => expect(state.preview).toHaveBeenCalledTimes(1))
+  const changed = state.preview.mock.calls[0][1].embedding
+  expect(changed.dense.credentials).toEqual(
+    [...payload.models.embedding.config.dense.credentials].reverse(),
+  )
+  expect(state.preview.mock.calls[0][1].vlm).toBeUndefined()
+  for (const handle of section('vlmType').getAllByRole('button', {
+    name: 'models.dragToReorder',
+  })) {
+    expect(handle.hasAttribute('disabled')).toBe(true)
+    fireEvent.keyDown(handle, { key: 'ArrowDown' })
+  }
+  expect(state.preview).toHaveBeenCalledTimes(1)
+  await act(async () => {
+    finish({ content, models: data.models })
+  })
+})
+
+it('tests an unsaved model draft without previewing or saving and clears stale results on edit', async () => {
+  mount()
+  await screen.findByText('model-a')
+  const fetch = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: 'OK' } }] }),
+      ),
+    )
+  try {
+    fireEvent.click(
+      section('vlmType').getAllByRole('button', { name: 'models.edit' })[0],
+    )
+    fireEvent.change(screen.getByLabelText('models.fields.model'), {
+      target: { value: 'unsaved-model' },
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'models.connectionTest.action' }),
+    )
+    await screen.findByText('models.connectionTest.success')
+    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body)).model).toBe(
+      'unsaved-model',
+    )
+    expect(state.preview).not.toHaveBeenCalled()
+    expect(state.save).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('models.fields.api_base'), {
+      target: { value: 'https://changed.example/v1' },
+    })
+    expect(screen.queryByText('models.connectionTest.success')).toBeNull()
+  } finally {
+    fetch.mockRestore()
+  }
+})
+
+it('cancels a pending connection test when the dialog closes', async () => {
+  mount()
+  await screen.findByText('model-a')
+  let signal: AbortSignal | undefined
+  const fetch = vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation((_url, init) => {
+      signal = init?.signal as AbortSignal
+      return new Promise((_resolve, reject) =>
+        signal?.addEventListener('abort', () =>
+          reject(new DOMException('Aborted', 'AbortError')),
+        ),
+      )
+    })
+  try {
+    fireEvent.click(
+      section('vlmType').getAllByRole('button', { name: 'models.edit' })[0],
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'models.connectionTest.action' }),
+    )
+    await screen.findByRole('button', { name: 'models.connectionTest.testing' })
+    fireEvent.click(screen.getByRole('button', { name: 'models.dismiss' }))
+    expect(signal?.aborted).toBe(true)
+    expect(state.save).not.toHaveBeenCalled()
+  } finally {
+    fetch.mockRestore()
+  }
+})
+
+it('times out browser testing after 30 seconds and allows retry', async () => {
+  mount()
+  await screen.findByText('model-a')
+  fireEvent.click(
+    section('vlmType').getAllByRole('button', { name: 'models.edit' })[0],
+  )
+  const fetch = vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) =>
+          init?.signal?.addEventListener('abort', () =>
+            reject(init.signal?.reason),
+          ),
+        ),
+    )
+  vi.useFakeTimers()
+  try {
+    fireEvent.click(
+      screen.getByRole('button', { name: 'models.connectionTest.action' }),
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000)
+    })
+    expect(screen.getByText('models.connectionTest.timeout')).toBeTruthy()
+    expect(
+      screen
+        .getByRole('button', { name: 'models.connectionTest.action' })
+        .hasAttribute('disabled'),
+    ).toBe(false)
+    expect(state.save).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+    fetch.mockRestore()
+  }
+})

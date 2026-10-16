@@ -873,6 +873,28 @@ const workspace = {
       dense: '稠密向量',
       sparse: '稀疏向量',
       hybrid: '混合向量',
+      connectionTest: {
+        action: '测试连接',
+        testing: '测试中…',
+        hint: '从当前浏览器直接发送一次简短模型请求，可能产生少量用量；不会保存配置。结果仅代表浏览器连接，不代表 OpenViking 服务端连接。',
+        unsupported:
+          '此服务提供商暂不支持浏览器直连测试。支持 OpenAI 兼容 VLM、Azure，以及 OpenAI / Azure Embedding。',
+        success: '连接成功，模型已返回有效结果（{{ms}} ms）。',
+        missing: '请填写模型 ID、API Key 和 API 地址，或使用服务商默认地址。',
+        invalidUrl:
+          'API 地址必须是有效的 HTTP(S) 地址，不能包含账号、查询参数或片段。',
+        network:
+          '浏览器无法完成请求，可能是跨域（CORS）、网络、证书或 HTTPS 页面访问 HTTP 地址受限；无法据此判断模型配置是否有效。',
+        http: '模型服务返回错误：',
+        invalidResponse:
+          '服务已响应，但未返回有效的模型结果，无法确认连接成功。',
+        timeout: '测试超过 30 秒，请重试或检查网络及模型响应速度。',
+        failed: '未能完成测试，请检查配置后重试。',
+      },
+      dragToReorder: '拖动调整 {{model}} 的顺序',
+      dragHint: '拖动排序，也可使用键盘上下方向键。',
+      thinkingHint:
+        '此开关由所有 VLM 模型共用，需要模型及服务提供商支持；保存并重启服务后生效。',
       priority: '顺序',
       preferred: '首选',
       backup: '备用',
