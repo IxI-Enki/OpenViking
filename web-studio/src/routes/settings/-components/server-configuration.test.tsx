@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import {
   cleanup,
+  createEvent,
   act,
   fireEvent,
   render,
@@ -1119,11 +1120,26 @@ it('drags VLM models into priority order and preserves complete credentials on s
   const handles = section('vlmType').getAllByRole('button', {
     name: 'models.dragToReorder',
   })
-  const transfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' }
-  fireEvent.dragStart(handles[1], { dataTransfer: transfer })
+  const transfer = {
+    setData: vi.fn(),
+    setDragImage: vi.fn(),
+    effectAllowed: '',
+    dropEffect: '',
+  }
+  const row = handles[1].closest('[data-model-row]')!
+  expect(row.getAttribute('draggable')).toBe('true')
+  const start = createEvent.dragStart(row, { dataTransfer: transfer })
+  Object.defineProperties(start, {
+    clientX: { value: 20 },
+    clientY: { value: 10 },
+  })
+  fireEvent(row, start)
+  expect(transfer.setDragImage).toHaveBeenCalledWith(row, 20, 10)
   fireEvent.dragOver(handles[0], { dataTransfer: transfer })
   expect(state.preview).not.toHaveBeenCalled()
-  expect(handles[0].closest('[data-drop-target]')).toBeTruthy()
+  expect(
+    handles[0].closest('[data-drop-target]')?.getAttribute('data-drop-target'),
+  ).toBe('before')
   fireEvent.drop(handles[0], { dataTransfer: transfer })
   await waitFor(() => expect(state.preview).toHaveBeenCalledTimes(1))
   fireEvent.click(screen.getByRole('button', { name: 'models.saveAll' }))
@@ -1139,7 +1155,12 @@ it('cancels a drag without changing the draft and supports keyboard reordering',
   const handles = section('vlmType').getAllByRole('button', {
     name: 'models.dragToReorder',
   })
-  const transfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' }
+  const transfer = {
+    setData: vi.fn(),
+    setDragImage: vi.fn(),
+    effectAllowed: '',
+    dropEffect: '',
+  }
   fireEvent.dragStart(handles[0], { dataTransfer: transfer })
   fireEvent.dragOver(handles[1], { dataTransfer: transfer })
   fireEvent.dragEnd(handles[0], { dataTransfer: transfer })
@@ -1223,7 +1244,12 @@ it('reorders only the selected embedding group and blocks drag while validation 
   const handles = embedding.getAllByRole('button', {
     name: 'models.dragToReorder',
   })
-  const transfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' }
+  const transfer = {
+    setData: vi.fn(),
+    setDragImage: vi.fn(),
+    effectAllowed: '',
+    dropEffect: '',
+  }
   // A drag from another model list must not be accepted here.
   fireEvent.dragStart(
     section('vlmType').getAllByRole('button', {
@@ -1312,4 +1338,17 @@ it('shows safe model authentication failures from the server', async () => {
   )
   await screen.findByText('models.connectionTest.authentication_error')
   expect(state.save).not.toHaveBeenCalled()
+})
+
+it('keeps model row controls clickable without starting a drag', async () => {
+  mount()
+  const model = await screen.findByRole('button', {
+    name: 'model-a',
+    exact: true,
+  })
+  const transfer = { setData: vi.fn(), setDragImage: vi.fn() }
+  expect(fireEvent.dragStart(model, { dataTransfer: transfer })).toBe(false)
+  expect(transfer.setDragImage).not.toHaveBeenCalled()
+  fireEvent.click(model)
+  expect(await screen.findByRole('dialog')).toBeTruthy()
 })

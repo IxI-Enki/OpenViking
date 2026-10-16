@@ -112,7 +112,7 @@ type RowProps = {
   onMove: (index: number) => void
   dragHandle: React.ReactNode
   dropProps: React.HTMLAttributes<HTMLDivElement>
-  dropTarget: boolean
+  dropTarget?: 'before' | 'after'
 }
 function ModelRow({
   value,
@@ -136,8 +136,9 @@ function ModelRow({
   return (
     <div
       {...dropProps}
-      data-drop-target={dropTarget ? '' : undefined}
-      className={`grid min-w-0 items-start gap-2 border-b bg-background py-3 data-[drop-target]:bg-accent data-[drop-target]:ring-1 data-[drop-target]:ring-ring text-sm md:items-center ${ordered ? 'grid-cols-[56px_minmax(0,1fr)] md:grid-cols-[56px_minmax(0,1.4fr)_100px_minmax(0,1.4fr)_80px_104px]' : 'grid-cols-[0px_minmax(0,1fr)] gap-x-0 md:grid-cols-[minmax(0,1.4fr)_100px_minmax(0,1.4fr)_80px_104px] md:gap-x-2'}`}
+      data-model-row=""
+      data-drop-target={dropTarget}
+      className={`grid min-w-0 items-start gap-2 border-b bg-background py-3 data-[drop-target]:bg-accent data-[drop-target=before]:shadow-[inset_0_2px_0_var(--primary)] data-[drop-target=after]:shadow-[inset_0_-2px_0_var(--primary)] text-sm md:items-center ${ordered ? 'grid-cols-[56px_minmax(0,1fr)] md:grid-cols-[56px_minmax(0,1.4fr)_100px_minmax(0,1.4fr)_80px_104px]' : 'grid-cols-[0px_minmax(0,1fr)] gap-x-0 md:grid-cols-[minmax(0,1.4fr)_100px_minmax(0,1.4fr)_80px_104px] md:gap-x-2'}`}
     >
       <div
         className={
@@ -295,6 +296,30 @@ function ModelList({
         <ModelRow
           key={ids[index]}
           dropProps={{
+            draggable: !disabled && values.length > 1,
+            onDragStart: (event) => {
+              const control = (event.target as Element).closest(
+                'button, a, input, select, textarea',
+              )
+              if (
+                disabled ||
+                (control && !control.hasAttribute('data-model-drag-handle'))
+              ) {
+                event.preventDefault()
+                return
+              }
+              const row = event.currentTarget
+              const bounds = row.getBoundingClientRect()
+              event.dataTransfer.effectAllowed = 'move'
+              event.dataTransfer.setData('text/plain', ids[index])
+              event.dataTransfer.setDragImage(
+                row,
+                event.clientX - bounds.left,
+                event.clientY - bounds.top,
+              )
+              setDrag({ from: index, to: index })
+            },
+            onDragEnd: () => setDrag(null),
             onDragOver: (event) => {
               if (disabled || !drag) return
               event.preventDefault()
@@ -308,27 +333,23 @@ function ModelList({
               setDrag(null)
             },
           }}
-          dropTarget={!disabled && drag?.to === index && drag.from !== index}
+          dropTarget={
+            !disabled && drag?.to === index && drag.from !== index
+              ? drag.from > index
+                ? 'before'
+                : 'after'
+              : undefined
+          }
           dragHandle={
             <button
               type="button"
-              draggable={!disabled}
+              data-model-drag-handle=""
               disabled={disabled}
               aria-label={t('models.dragToReorder', {
                 model: String(value.model || fallback.model || index + 1),
               })}
               title={t('models.dragHint')}
               className="flex size-6 shrink-0 cursor-grab items-center justify-center rounded hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring active:cursor-grabbing disabled:cursor-default"
-              onDragStart={(event) => {
-                if (disabled) {
-                  event.preventDefault()
-                  return
-                }
-                event.dataTransfer.effectAllowed = 'move'
-                event.dataTransfer.setData('text/plain', ids[index])
-                setDrag({ from: index, to: index })
-              }}
-              onDragEnd={() => setDrag(null)}
               onKeyDown={(event) => {
                 if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
                 event.preventDefault()
